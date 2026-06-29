@@ -1,92 +1,109 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>聊天室</title>
-<style>
-*{box-sizing:border-box;font-family:system-ui}
-body{max-width:600px;margin:20px auto;padding:0 15px;background:#fff}
-#chatBox{border:1px solid #ccc;height:400px;overflow-y:auto;padding:10px;margin:10px 0;border-radius:6px}
-.msg{margin:6px 0;padding:8px;border-radius:4px;max-width:80%}
-.self{background:#e3f2fd;text-align:right;margin-left:auto}
-.other{background:#f1f1f1;text-align:left}
-.input-row{display:flex;gap:8px;margin-top:10px}
-input{flex:1;padding:10px;border:1px solid #ccc;border-radius:4px}
-button{padding:10px 16px;background:#2196f3;color:#fff;border:none;border-radius:4px}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>聊天室</title>
+  <style>
+    *{box-sizing:border-box;font-family:system-ui}
+    body{max-width:600px;margin:20px auto;padding:0 15px;background:#fff}
+    #chatBox{border:1px solid #ccc;height:400px;overflow-y:auto;padding:10px;margin:10px 0;border-radius:6px}
+    .msg{margin:6px 0;padding:8px;border-radius:4px;max-width:80%}
+    .self{background:#e3f2fd;text-align:right;margin-left:auto}
+    .other{background:#f1f1f1;text-align:left}
+    .input-row{display:flex;gap:8px;margin-top:10px}
+    input{flex:1;padding:10px;border:1px solid #ccc;border-radius:4px}
+    button{padding:10px 16px;background:#2196f3;color:#fff;border:none;border-radius:4px}
+  </style>
 </head>
 <body>
-<div style="background: #f0f7ff; border: 1px solid #94b8e8; border-radius: 8px; padding: 14px; margin-bottom: 15px;">
+  <div style="background: #f0f7ff; border: 1px solid #94b8e8; border-radius: 8px; padding: 14px; margin-bottom: 15px;">
     <h3 style="margin:0 0 10px 0; font-size:16px; color:#1a4b99;">聊天室使用须知</h3>
     <p style="margin:6px 0; font-size:14px;">1. 在频道输入框填写任意数字/字母作为房间号；</p>
     <p style="margin:6px 0; font-size:14px;">2. <b>只有输入完全一样频道号的人，才能互相收发消息</b>；</p>
-    <p style="margin:6px 0; font-size:14px;">3. 频道号不一致的用户会处于独立房间，看不到彼此聊天内容；</p>
-    <p style="margin:6px 0; font-size:14px;">4. 示例：你输入 520，好友也输入 520，双方即可同屋聊天。</p>
-</div>
-<div class="input-row">
-<input id="usernameInput" placeholder="输入你的昵称">
-<input id="channelInput" placeholder="输入频道号加入房间">
-<button onclick="joinChannel()">加入频道</button>
-</div>
-<div id="chatBox"></div>
-<div class="input-row">
-<input id="msgInput" placeholder="输入消息...">
-<button onclick="sendMsg()">发送</button>
-</div>
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-<script>
-const broker = 'wss://broker.emqx.io:8884/mqtt'
-let client = null
-let currentChannel = ''
-let username = ''
+    <p style="margin:6px 0; font-size:14px;">3. 频道号不一致的用户处于独立房间，互相看不见聊天；</p>
+    <p style="margin:6px 0; font-size:14px;">4. 示例：双方都填520，即可进入同一房间互通消息。</p>
+  </div>
 
-function joinChannel(){
-  username = document.getElementById('usernameInput').value.trim()
-  currentChannel = document.getElementById('channelInput').value.trim()
-  if(!username) return alert('请输入昵称')
-  if(!currentChannel) return alert('请输入频道号')
+  <div class="input-row">
+    <input id="usernameInput" placeholder="输入你的昵称">
+    <input id="channelInput" placeholder="输入频道号加入房间">
+    <button onclick="joinChannel()">加入频道</button>
+  </div>
 
-  // 先断开旧连接
-  if(client) client.end()
+  <div id="chatBox"></div>
 
-  client = mqtt.connect(broker)
+  <div class="input-row">
+    <input id="msgInput" placeholder="输入消息...">
+    <button onclick="sendMsg()">发送</button>
+  </div>
 
-  client.on('connect', ()=>{
-    // 订阅当前频道主题
-    client.subscribe(`chat/ch/${currentChannel}`)
-  })
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script>
+    const broker = 'wss://broker.emqx.io:8884/mqtt'
+    let client = null
+    let currentChannel = ''
+    let username = ''
 
-  client.on('message', (topic, payload)=>{
-    const data = JSON.parse(payload.toString())
-    if(data.type === 'msg'){
-      addMsg(data.user, data.content, data.user === username)
+    function joinChannel() {
+      username = document.getElementById('usernameInput').value.trim()
+      currentChannel = document.getElementById('channelInput').value.trim()
+      if (!username) return alert('请输入昵称')
+      if (!currentChannel) return alert('请输入频道号')
+
+      // 关闭旧连接，避免多连接冲突
+      if (client) client.end()
+
+      client = mqtt.connect(broker)
+
+      client.on('connect', () => {
+        client.subscribe(`chat/ch/${currentChannel}`, (err) => {
+          if (err) alert('频道订阅失败！')
+        })
+      })
+
+      client.on('message', (topic, payload) => {
+        try {
+          const data = JSON.parse(payload.toString())
+          if (data.type === 'msg') {
+            addMsg(data.user, data.content, data.user === username)
+          }
+        } catch (e) {
+          console.log('消息解析错误', e)
+        }
+      })
+
+      client.on('error', (err) => {
+        alert('MQTT服务器连接失败，请稍后重试')
+        console.error(err)
+      })
     }
-  })
-}
 
-function sendMsg(){
-  const content = document.getElementById('msgInput').value.trim()
-  if(!content || !currentChannel || !username || !client) return
+    function sendMsg() {
+      const content = document.getElementById('msgInput').value.trim()
+      if (!content || !currentChannel || !username || !client || !client.connected) {
+        alert('请先成功加入频道再发送消息')
+        return
+      }
 
-  // 发布到【和订阅一样的主题】
-  client.publish(`chat/ch/${currentChannel}`, JSON.stringify({
-    type:'msg',
-    user: username,
-    content:content
-  }))
+      const targetTopic = `chat/ch/${currentChannel}`
+      client.publish(targetTopic, JSON.stringify({
+        type: 'msg',
+        user: username,
+        content: content
+      }))
 
-  document.getElementById('msgInput').value = ''
-}
+      document.getElementById('msgInput').value = ''
+    }
 
-function addMsg(user, text, isSelf){
-  const box = document.getElementById('chatBox')
-  const div = document.createElement('div')
-  div.className = isSelf ? 'msg self' : 'msg other'
-  div.innerText = `${user}：${text}`
-  box.appendChild(div)
-  box.scrollTop = box.scrollHeight
-}
-</script>
+    function addMsg(user, text, isSelf) {
+      const box = document.getElementById('chatBox')
+      const div = document.createElement('div')
+      div.className = isSelf ? 'msg self' : 'msg other'
+      div.innerText = `${user}：${text}`
+      box.appendChild(div)
+      box.scrollTop = box.scrollHeight
+    }
+  </script>
 </body>
 </html>
