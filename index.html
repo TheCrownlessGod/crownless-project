@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MQTT聊天室</title>
+  <title>公共聊天室</title>
   <style>
     * {
       box-sizing: border-box;
@@ -16,6 +16,27 @@
       margin: 20px auto;
       padding: 0 15px;
       background: #fff;
+    }
+    .status-bar {
+      padding: 10px 14px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-weight: bold;
+    }
+    .disconnect {
+      background: #ffe8e8;
+      color: #c0392b;
+      border: 1px solid #f8baba;
+    }
+    .connecting {
+      background: #fff8cc;
+      color: #b37400;
+      border: 1px solid #ffe880;
+    }
+    .connected {
+      background: #e8ffe8;
+      color: #27ae60;
+      border: 1px solid #baf8ba;
     }
     .tip-box {
       background: #f0f7ff;
@@ -77,96 +98,82 @@
   </style>
 </head>
 <body>
-  <div class="tip-box">
-    <h3>聊天室使用须知</h3>
-    <p>1. 频道号数字/字母均可，双方完全一致才能互通；</p>
-    <p>2. 浏览器拦截会导致连不上，建议关闭广告拦截/无痕模式测试；</p>
-    <p>3. 点击加入频道出现「连接成功」弹窗再发消息。</p>
+  <div id="statusBar" class="status-bar disconnect">
+    当前状态：未连接
   </div>
-
+  <div class="tip-box">
+    <h3>使用说明</h3>
+    <p>频道就是聊天房间，只有两个人输入完全一样的频道号，才能互相看到对方的消息。</p>
+    <p>例如：你输入 888，你的朋友也输入 888，你们就能进入同一个房间聊天。</p>
+    <p>频道号可以是数字或字母，频道号不同的人无法互通消息。</p>
+  </div>
   <div class="input-row">
     <input id="usernameInput" placeholder="输入你的昵称">
-    <input id="channelInput" placeholder="输入频道号加入房间">
+    <input id="channelInput" placeholder="输入频道号">
     <button onclick="joinChannel()">加入频道</button>
   </div>
-
   <div id="chatBox"></div>
-
   <div class="input-row">
     <input id="msgInput" placeholder="输入消息...">
     <button onclick="sendMsg()">发送</button>
   </div>
-
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
-    const broker = 'wss://broker.emqx.io:8884/mqtt'
+    const broker = 'wss://broker-cn.emqx.io:8084/mqtt'
     let client = null
     let currentChannel = ''
     let username = ''
     let isConnected = false
-
+    const statusBar = document.getElementById('statusBar')
+    function updateStatus(text, isConnect) {
+      if (isConnect) {
+        statusBar.className = 'status-bar connected'
+      } else {
+        statusBar.className = 'status-bar disconnect'
+      }
+      statusBar.innerText = text
+    }
     function joinChannel() {
       username = document.getElementById('usernameInput').value.trim()
       currentChannel = document.getElementById('channelInput').value.trim()
       if (!username) return alert('请输入昵称')
       if (!currentChannel) return alert('请输入频道号')
-
-      // 销毁旧连接
       if (client) {
         client.end()
         isConnected = false
       }
-
+      updateStatus('正在连接频道 ' + currentChannel, false)
       client = mqtt.connect(broker)
-
-      // 连接成功
       client.on('connect', () => {
         isConnected = true
-        alert(`连接成功！当前频道：${currentChannel}`)
-        client.subscribe(`chat/ch/${currentChannel}`, (err) => {
-          if (err) alert('订阅频道失败：' + err)
-        })
+        updateStatus('已连接频道 ' + currentChannel, true)
+        client.subscribe(`chat/ch/${currentChannel}`)
       })
-
-      // 收到消息
       client.on('message', (topic, payload) => {
-        try {
-          const data = JSON.parse(payload.toString())
-          if (data.type === 'msg') {
-            addMsg(data.user, data.content, data.user === username)
-          }
-        } catch (e) {
-          console.error('消息解析失败', e)
-        }
+        const data = JSON.parse(payload.toString())
+        addMsg(data.user, data.content, data.user === username)
       })
-
-      // 连接异常
-      client.on('error', (err) => {
+      client.on('error', () => {
         isConnected = false
-        alert('服务器连接失败，关闭拦截工具重试：' + err)
-        console.error(err)
+        updateStatus('连接失败', false)
       })
-
-      // 断开连接
       client.on('close', () => {
         isConnected = false
+        updateStatus('未连接', false)
       })
     }
-
     function sendMsg() {
       const content = document.getElementById('msgInput').value.trim()
-      if (!content) return alert('请输入消息内容')
-      if (!isConnected) return alert('未连接频道，请先点【加入频道】并等待成功弹窗')
-
-      const targetTopic = `chat/ch/${currentChannel}`
-      client.publish(targetTopic, JSON.stringify({
+      if (!content) return
+      if (!isConnected) return alert('请先加入频道')
+      client.publish(`chat/ch/${currentChannel}`, JSON.stringify({
         type: 'msg',
         user: username,
         content: content
       }))
+      addMsg(username, content, true)
       document.getElementById('msgInput').value = ''
     }
-
     function addMsg(user, text, isSelf) {
       const box = document.getElementById('chatBox')
       const div = document.createElement('div')
