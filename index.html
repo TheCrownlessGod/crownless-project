@@ -222,6 +222,63 @@
     let lastSend = 0
 
     const tipBox = document.getElementById('firewallTip')
+    const agreeCheck = document.getElementById('agreeCheck')
+
+    function escapeHtml(str) {
+      const div = document.createElement('div')
+      div.innerText = str
+      return div.innerHTML
+    }
+
+    function showTip(text) {
+      tipBox.innerText = text
+    }
+
+    function showAgreeModal() {
+      document.getElementById('agreeModal').style.display = 'block'
+    }
+    function closeAgreeModal() {
+      document.getElementById('agreeModal').style.display = 'none'
+    }
+
+    function checkTotalUser() {
+      const visited = localStorage.getItem('chat_visited')
+      if (visited) return true
+      return true
+    }
+
+    function hasBadWord(text) {
+      const low = text.toLowerCase()
+      for (let w of BAD_WORDS) {
+        if (low.includes(w.toLowerCase())) return w
+      }
+      return false
+    }
+
+    function firewallCheck(text) {
+      if (!text.trim()) {
+        showTip('不能发送空内容')
+        return false
+      }
+      if (text.length > MAX_LEN) {
+        showTip(`消息不能超过 ${MAX_LEN} 字`)
+        return false
+      }
+      const bad = hasBadWord(text)
+      if (bad) {
+        showTip(`消息含违规内容「${bad}」，已被防火墙拦截`)
+        return false
+      }
+      const now = Date.now()
+      if (now - lastSend < SEND_GAP) {
+        const wait = Math.ceil((SEND_GAP - (now - lastSend)) / 1000)
+        showTip(`发送太频繁，请 ${wait} 秒后再试`)
+        return false
+      }
+      lastSend = now
+      showTip('')
+      return true
+    }
 
     async function loadChannelHistory(targetChannel) {
       try {
@@ -259,62 +316,6 @@
       }
     }
 
-    function checkTotalUser() {
-      const visited = localStorage.getItem('chat_visited')
-      if (visited) return true
-      return true
-    }
-
-    function escapeHtml(str) {
-      const div = document.createElement('div')
-      div.innerText = str
-      return div.innerHTML
-    }
-
-    function hasBadWord(text) {
-      const low = text.toLowerCase()
-      for (let w of BAD_WORDS) {
-        if (low.includes(w.toLowerCase())) return w
-      }
-      return false
-    }
-
-    function firewallCheck(text) {
-      if (!text.trim()) {
-        showTip('不能发送空内容')
-        return false
-      }
-      if (text.length > MAX_LEN) {
-        showTip(`消息不能超过 ${MAX_LEN} 字`)
-        return false
-      }
-      const bad = hasBadWord(text)
-      if (bad) {
-        showTip(`消息含违规内容「${bad}」，已被防火墙拦截`)
-        return false
-      }
-      const now = Date.now()
-      if (now - lastSend < SEND_GAP) {
-        const wait = Math.ceil((SEND_GAP - (now - lastSend)) / 1000)
-        showTip(`发送太频繁，请 ${wait} 秒后再试`)
-        return false
-      }
-      lastSend = now
-      showTip('')
-      return true
-    }
-
-    function showTip(text) {
-      tipBox.innerText = text
-    }
-
-    function showAgreeModal() {
-      document.getElementById('agreeModal').style.display = 'block'
-    }
-    function closeAgreeModal() {
-      document.getElementById('agreeModal').style.display = 'none'
-    }
-
     function joinChannel() {
       if (!checkTotalUser()) return
       nickname = document.getElementById('nameInput').value.trim()
@@ -345,12 +346,15 @@
       client.on('error', () => alert('连接失败'))
     }
 
-    // 核心修复：删除勾选框拦截。点击发送直接执行，无卡死
-    function sendMsg() {
+    // 已修复：补充async关键字，恢复强制勾选协议校验，按钮/回车双触发均生效
+    async function sendMsg() {
       if (!connected) return alert('请先加入频道')
+      if (!agreeCheck.checked) return alert('请先勾选同意用户协议')
+      
       const input = document.getElementById('msgInput')
       const text = input.value.trim()
       if (!firewallCheck(text)) return
+
       const payload = JSON.stringify({
         user: nickname,
         content: text
@@ -358,7 +362,7 @@
       client.publish(`chat/ch/${channel}`, payload)
       addMsg(nickname, text, true)
       input.value = ''
-      saveMessageToDB(channel, nickname, text)
+      await saveMessageToDB(channel, nickname, text)
     }
 
     function addMsg(name, msg, isSelf) {
@@ -380,4 +384,3 @@
   </script>
 </body>
 </html>
-
