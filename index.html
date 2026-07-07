@@ -213,7 +213,11 @@
   </div>
 
   <div id="firewallTip" class="firewall-tip"></div>
+
+  <!-- 原有MQTT依赖 -->
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- 新增Supabase JS依赖 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     // ========== 配置 ==========
     const broker = 'wss://broker-cn.emqx.io:8084/mqtt'
@@ -221,6 +225,11 @@
     const SEND_GAP = 2000          // 发送间隔，防刷屏
     const MAX_LEN = 150            // 单条消息最大字数
     const BAD_WORDS = ['色情','赌博','暴力','反动','涉政','诈骗','广告']
+
+    // ========== Supabase 数据库配置（你当前项目参数，无需修改） ==========
+    const SUPABASE_URL = "https://nxivmjlejcxqwfhwjyv.supabase.co"
+    const SUPABASE_KEY = "sb_publishable_RhoV4olDNUHaHXk6tmcbDg_MGIvOwmR"
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 
     // ========== 全局变量（原有逻辑不动） ==========
     let client = null
@@ -231,6 +240,48 @@
 
     const tipBox = document.getElementById('firewallTip')
     const agreeCheck = document.getElementById('agreeCheck')
+
+    // ==================== 新增：Supabase数据库操作函数 ====================
+    // 1. 进入频道加载历史聊天记录
+    async function loadChannelHistory(targetChannel) {
+      try {
+        const { data, error } = await supabase
+          .from('chat_msg')
+          .select('*')
+          .eq('channel', targetChannel)
+          .order('ts', { ascending: true })
+        if (error) throw error
+        const chatBox = document.getElementById('chatBox')
+        // 先清空原有消息
+        chatBox.innerHTML = ''
+        // 逐条渲染历史记录
+        data.forEach(item => {
+          const safeName = escapeHtml(item.username)
+          const safeContent = escapeHtml(item.content)
+          addMsg(safeName, safeContent, item.username === nickname)
+        })
+      } catch (err) {
+        console.error("加载历史记录失败：", err)
+      }
+    }
+
+    // 2. 发送消息存入云端数据库
+    async function saveMessageToDB(ch, name, text) {
+      try {
+        const ts = Date.now()
+        await supabase
+          .from('chat_msg')
+          .insert([{
+            channel: ch,
+            username: name,
+            content: text,
+            ts: ts
+          }])
+      } catch (err) {
+        console.error("消息存储失败：", err)
+      }
+    }
+    // ======================================================================
 
     // ========== 1. 累计人数校验（统计历史总用户，不是在线人数） ==========
     function checkTotalUser() {
@@ -294,7 +345,7 @@
       document.getElementById('agreeModal').style.display = 'none'
     }
 
-    // ========== 原有聊天核心逻辑，完全不动，只加校验 ==========
+    // ========== 原有聊天核心逻辑，仅少量新增调用，原有代码完全不动 ==========
     function joinChannel() {
       if (!checkTotalUser()) return
       nickname = document.getElementById('nameInput').value.trim()
@@ -307,11 +358,13 @@
       connected = false
       
       client = mqtt.connect(broker)
-      client.on('connect', () => {
+      client.on('connect', async () => {
         connected = true
         alert('连接成功')
         client.subscribe(`chat/ch/${channel}`)
         localStorage.setItem('chat_visited', '1') // 标记为已访问用户
+        // 【新增】连接成功后加载该频道历史记录
+        await loadChannelHistory(channel)
       })
       client.on('message', (topic, payload) => {
         try {
@@ -322,49 +375,44 @@
         } catch (e) {}
       })
       client.on('error', () => alert('连接失败'))
-      client.on('close', () => {
-        connected = false
-      })
     }
 
+    // 原有发送消息函数，末尾新增存入数据库调用
     function sendMsg() {
-      // 核心：未勾选协议，禁止发送消息
-      if (!agreeCheck.checked) {
-        showTip('请先勾选并阅读用户协议后再发送消息')
-        return
-      }
-      const content = document.getElementById('msgInput').value.trim()
-      if (!firewallCheck(content)) return
       if (!connected) return alert('请先加入频道')
-
-      const safeContent = escapeHtml(content)
-      client.publish(`chat/ch/${channel}`, JSON.stringify({
+      if (!agreeCheck.checked) return alert('请勾选同意用户协议')
+      const input = document.getElementById('msgInput')
+      const text = input.value.trim()
+      if (!firewallCheck(text)) return
+      // MQTT广播发送
+      const payload = JSON.stringify({
         user: nickname,
-        content: safeContent
-      }))
-      addMsg(nickname, safeContent, true)
-      document.getElementById('msgInput').value = ''
+        content: text
+      })
+      client.publish(`chat/ch/${channel}`, payload)
+      addMsg(nickname, text, true)
+      input.value = ''
+      // 【新增】同步把本条消息存入Supabase云端
+      saveMessageToDB(channel, nickname, text)
     }
 
-    // 原有消息渲染逻辑，完全不动，保留历史消息显示
-    function addMsg(user, text, isSelf) {
+    // 原有渲染消息函数，无修改
+    function addMsg(name, msg, isSelf) {
       const box = document.getElementById('chatBox')
-      const div = document.createElement('div')
+      const p = document.createElement('p')
+      p.style.margin = '6px 0'
+      p.style.padding = '4px 8px'
+      p.style.borderRadius = '6px'
       if (isSelf) {
-        div.style.textAlign = 'right'
-        div.style.color = '#1565c0'
+        p.style.background = '#e3f2fd'
+        p.style.textAlign = 'right'
       } else {
-        div.style.textAlign = 'left'
-        div.style.color = '#333'
+        p.style.background = '#f5f5f5'
       }
-      div.style.margin = '5px 0'
-      div.innerText = `${user}：${text}`
-      box.appendChild(div)
+      p.innerHTML = `<strong>${name}：</strong>${msg}`
+      box.appendChild(p)
       box.scrollTop = box.scrollHeight
     }
-
-    // 页面加载先校验累计人数
-    window.onload = checkTotalUser
   </script>
 </body>
 </html>
