@@ -280,6 +280,7 @@
       return true
     }
 
+    // 加载历史记录（仅内部使用await）
     async function loadChannelHistory(targetChannel) {
       try {
         const { data, error } = await supabase
@@ -300,6 +301,7 @@
       }
     }
 
+    // 消息入库（仅内部使用await）
     async function saveMessageToDB(ch, name, text) {
       try {
         const ts = Date.now()
@@ -316,6 +318,7 @@
       }
     }
 
+    // 加入频道 无async、无顶层await，点击百分百响应
     function joinChannel() {
       if (!checkTotalUser()) return
       nickname = document.getElementById('nameInput').value.trim()
@@ -328,12 +331,13 @@
       connected = false
       
       client = mqtt.connect(broker)
-      client.on('connect', async () => {
+      client.on('connect', function() {
         connected = true
         alert('连接成功')
         client.subscribe(`chat/ch/${channel}`)
         localStorage.setItem('chat_visited', '1')
-        await loadChannelHistory(channel)
+        // 调用异步加载历史
+        loadChannelHistory(channel)
       })
       client.on('message', (topic, payload) => {
         try {
@@ -346,7 +350,7 @@
       client.on('error', () => alert('连接失败'))
     }
 
-    // 已修复：补充async关键字，恢复强制勾选协议校验，按钮/回车双触发均生效
+    // 发送函数带async，内部await合法，保留协议勾选强制校验
     async function sendMsg() {
       if (!connected) return alert('请先加入频道')
       if (!agreeCheck.checked) return alert('请先勾选同意用户协议')
