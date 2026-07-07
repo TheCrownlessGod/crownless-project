@@ -345,7 +345,7 @@
       client.on('error', () => alert('连接失败'))
     }
 
-    // 核心修复：删除勾选框拦截，点击发送直接执行，无卡死
+    // 核心修复：删除勾选框拦截。点击发送直接执行，无卡死
     function sendMsg() {
       if (!connected) return alert('请先加入频道')
       const input = document.getElementById('msgInput')
