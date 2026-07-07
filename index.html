@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>私密频道聊天室1.0.4</title>
+  <title>私密频道聊天室1.0.5</title>
   <style>
     body {
       max-width: 700px;
@@ -177,7 +177,7 @@
   <div class="notice-box">
     <h4>聊天室使用须知</h4>
     <p>1. 频道号数字/字母均可，双方完全一致才能互通；</p>
-    <p>2. 浏览器拦截会导致连不上，建议关闭广告拦截/无痕模式测试；</p>
+    <p>2. 公共MQTT服务器国内网络不稳定，连不上切换手机流量重试；</p>
     <p>3. 点击加入频道出现「连接成功」弹窗再发消息。</p>
   </div>
 
@@ -229,24 +229,20 @@
       div.innerText = str
       return div.innerHTML
     }
-
     function showTip(text) {
       tipBox.innerText = text
     }
-
     function showAgreeModal() {
       document.getElementById('agreeModal').style.display = 'block'
     }
     function closeAgreeModal() {
       document.getElementById('agreeModal').style.display = 'none'
     }
-
     function checkTotalUser() {
       const visited = localStorage.getItem('chat_visited')
       if (visited) return true
       return true
     }
-
     function hasBadWord(text) {
       const low = text.toLowerCase()
       for (let w of BAD_WORDS) {
@@ -254,7 +250,6 @@
       }
       return false
     }
-
     function firewallCheck(text) {
       if (!text.trim()) {
         showTip('不能发送空内容')
@@ -280,7 +275,6 @@
       return true
     }
 
-    // 加载历史记录（仅内部使用await）
     async function loadChannelHistory(targetChannel) {
       try {
         const { data, error } = await supabase
@@ -300,25 +294,21 @@
         console.error("加载历史记录失败：", err)
       }
     }
-
-    // 消息入库（仅内部使用await）
     async function saveMessageToDB(ch, name, text) {
       try {
         const ts = Date.now()
-        await supabase
-          .from('chat_msg')
-          .insert([{
-            channel: ch,
-            username: name,
-            content: text,
-            ts: ts
-          }])
+        await supabase.from('chat_msg').insert([{
+          channel: ch,
+          username: name,
+          content: text,
+          ts: ts
+        }])
       } catch (err) {
-        console.error("消息存储失败：", err)
+        console.error("消息存储失败", err)
       }
     }
 
-    // 加入频道 无async、无顶层await，点击百分百响应
+    // 加入频道，点击一定响应
     function joinChannel() {
       if (!checkTotalUser()) return
       nickname = document.getElementById('nameInput').value.trim()
@@ -326,19 +316,32 @@
       if (!nickname) return alert('请输入昵称')
       if (!channel) return alert('请输入频道号')
       if (!firewallCheck(nickname)) return
-
       if (client) client.end()
       connected = false
-      
-      client = mqtt.connect(broker)
+      alert("正在连接MQTT服务器，请稍等...")
+      // 建立连接，增加超时配置
+      client = mqtt.connect(broker, {
+        connectTimeout: 6000
+      })
+      // 连接成功
       client.on('connect', function() {
         connected = true
         alert('连接成功')
         client.subscribe(`chat/ch/${channel}`)
         localStorage.setItem('chat_visited', '1')
-        // 调用异步加载历史
         loadChannelHistory(channel)
       })
+      // 连接失败
+      client.on('error', (err) => {
+        alert('连接失败！网络拦截/服务器超时，切换手机流量重试：' + err.message)
+        connected = false
+      })
+      // 断开连接
+      client.on('close', () => {
+        alert('与服务器断开连接，请重新点击加入频道')
+        connected = false
+      })
+      // 收到消息
       client.on('message', (topic, payload) => {
         try {
           const data = JSON.parse(payload.toString())
@@ -347,22 +350,16 @@
           addMsg(safeName, safeMsg, data.user === nickname)
         } catch (e) {}
       })
-      client.on('error', () => alert('连接失败'))
     }
 
-    // 发送函数带async，内部await合法，保留协议勾选强制校验
+    // 发送：必须勾选协议、按钮+回车双触发
     async function sendMsg() {
       if (!connected) return alert('请先加入频道')
       if (!agreeCheck.checked) return alert('请先勾选同意用户协议')
-      
       const input = document.getElementById('msgInput')
       const text = input.value.trim()
       if (!firewallCheck(text)) return
-
-      const payload = JSON.stringify({
-        user: nickname,
-        content: text
-      })
+      const payload = JSON.stringify({user: nickname, content: text})
       client.publish(`chat/ch/${channel}`, payload)
       addMsg(nickname, text, true)
       input.value = ''
