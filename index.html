@@ -11,7 +11,6 @@
       font-family: sans-serif;
       padding: 0 20px;
     }
-    /* 原有使用须知框，完全不动 */
     .notice-box {
       background: #e8f2ff;
       border: 1px solid #b8d4ff;
@@ -29,7 +28,6 @@
       font-size: 14px;
       color: #222;
     }
-    /* 原有顶部输入行，完全不动 */
     .top-input {
       display: flex;
       gap: 10px;
@@ -51,7 +49,6 @@
       cursor: pointer;
       font-size: 14px;
     }
-    /* 原有聊天框，完全不动，保留历史消息显示 */
     #chatBox {
       width: 100%;
       height: 380px;
@@ -63,7 +60,6 @@
       margin-bottom: 12px;
       background: #fff;
     }
-    /* 原有底部发送行，完全不动 */
     .send-row {
       display: flex;
       gap: 10px;
@@ -84,7 +80,6 @@
       cursor: pointer;
       font-size: 14px;
     }
-    /* 新增：底部协议勾选行，不破坏原有布局 */
     .agree-row {
       font-size: 13px;
       color: #444;
@@ -98,7 +93,6 @@
       cursor: pointer;
       text-decoration: underline;
     }
-    /* 新增：协议详情弹窗，默认隐藏 */
     .agree-modal {
       position: fixed;
       top: 50%;
@@ -137,14 +131,12 @@
       border-radius: 3px;
       cursor: pointer;
     }
-    /* 新增：防火墙提示 */
     .firewall-tip {
       color: #d32f2f;
       font-size: 13px;
       min-height: 18px;
       margin: 4px 0;
     }
-    /* 新增：累计人数超限遮罩 */
     .limit-mask {
       position: fixed;
       top: 0;
@@ -164,13 +156,11 @@
   </style>
 </head>
 <body>
-  <!-- 累计人数超限遮罩（默认隐藏） -->
   <div id="limitMask" class="limit-mask">
     <h2>访问人数已达上限</h2>
     <p>本演示累计开放 600 个使用名额，当前已达上限，不再接纳新用户</p>
   </div>
 
-  <!-- 协议详情弹窗（默认隐藏） -->
   <div id="agreeModal" class="agree-modal">
     <h3>用户使用协议</h3>
     <div class="agree-content">
@@ -184,7 +174,6 @@
     <button onclick="closeAgreeModal()">我已知晓</button>
   </div>
 
-  <!-- 以下完全是你原有的界面，一行没改 -->
   <div class="notice-box">
     <h4>聊天室使用须知</h4>
     <p>1. 频道号数字/字母均可，双方完全一致才能互通；</p>
@@ -200,7 +189,6 @@
 
   <div id="chatBox"></div>
 
-  <!-- 新增：协议勾选行，放在发送框上方 -->
   <div class="agree-row">
     <input type="checkbox" id="agreeCheck">
     <span>我已阅读并同意</span>
@@ -214,24 +202,19 @@
 
   <div id="firewallTip" class="firewall-tip"></div>
 
-  <!-- 原有MQTT依赖 -->
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <!-- 新增Supabase JS依赖 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    // ========== 配置 ==========
     const broker = 'wss://broker-cn.emqx.io:8084/mqtt'
-    const MAX_TOTAL = 600          // 累计使用人数上限
-    const SEND_GAP = 2000          // 发送间隔，防刷屏
-    const MAX_LEN = 150            // 单条消息最大字数
+    const MAX_TOTAL = 600
+    const SEND_GAP = 2000
+    const MAX_LEN = 150
     const BAD_WORDS = ['色情','赌博','暴力','反动','涉政','诈骗','广告']
 
-    // ========== Supabase 数据库配置（你当前项目参数，无需修改） ==========
     const SUPABASE_URL = "https://nxivmjlejcxqwfhwjyv.supabase.co"
     const SUPABASE_KEY = "sb_publishable_RhoV4olDNUHaHXk6tmcbDg_MGIvOwmR"
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 
-    // ========== 全局变量（原有逻辑不动） ==========
     let client = null
     let channel = ''
     let nickname = ''
@@ -239,10 +222,7 @@
     let lastSend = 0
 
     const tipBox = document.getElementById('firewallTip')
-    const agreeCheck = document.getElementById('agreeCheck')
 
-    // ==================== 新增：Supabase数据库操作函数 ====================
-    // 1. 进入频道加载历史聊天记录
     async function loadChannelHistory(targetChannel) {
       try {
         const { data, error } = await supabase
@@ -252,9 +232,7 @@
           .order('ts', { ascending: true })
         if (error) throw error
         const chatBox = document.getElementById('chatBox')
-        // 先清空原有消息
         chatBox.innerHTML = ''
-        // 逐条渲染历史记录
         data.forEach(item => {
           const safeName = escapeHtml(item.username)
           const safeContent = escapeHtml(item.content)
@@ -265,7 +243,6 @@
       }
     }
 
-    // 2. 发送消息存入云端数据库
     async function saveMessageToDB(ch, name, text) {
       try {
         const ts = Date.now()
@@ -281,27 +258,19 @@
         console.error("消息存储失败：", err)
       }
     }
-    // ======================================================================
 
-    // ========== 1. 累计人数校验（统计历史总用户，不是在线人数） ==========
     function checkTotalUser() {
       const visited = localStorage.getItem('chat_visited')
-      if (visited) return true // 老用户直接放行，不重复计数
-      // 真实部署：这里请求Python服务端获取累计人数，>=600则拦截
-      // 演示默认放行，对接服务端后打开下面注释即可
-      // if (累计数 >= 600) {
-      //   document.getElementById('limitMask').style.display = 'block'
-      //   return false
-      // }
+      if (visited) return true
       return true
     }
 
-    // ========== 2. 防火墙模块 ==========
     function escapeHtml(str) {
       const div = document.createElement('div')
       div.innerText = str
       return div.innerHTML
     }
+
     function hasBadWord(text) {
       const low = text.toLowerCase()
       for (let w of BAD_WORDS) {
@@ -309,6 +278,7 @@
       }
       return false
     }
+
     function firewallCheck(text) {
       if (!text.trim()) {
         showTip('不能发送空内容')
@@ -333,11 +303,11 @@
       showTip('')
       return true
     }
+
     function showTip(text) {
       tipBox.innerText = text
     }
 
-    // ========== 3. 协议弹窗控制 ==========
     function showAgreeModal() {
       document.getElementById('agreeModal').style.display = 'block'
     }
@@ -345,7 +315,6 @@
       document.getElementById('agreeModal').style.display = 'none'
     }
 
-    // ========== 原有聊天核心逻辑，仅少量新增调用，原有代码完全不动 ==========
     function joinChannel() {
       if (!checkTotalUser()) return
       nickname = document.getElementById('nameInput').value.trim()
@@ -362,8 +331,7 @@
         connected = true
         alert('连接成功')
         client.subscribe(`chat/ch/${channel}`)
-        localStorage.setItem('chat_visited', '1') // 标记为已访问用户
-        // 【新增】连接成功后加载该频道历史记录
+        localStorage.setItem('chat_visited', '1')
         await loadChannelHistory(channel)
       })
       client.on('message', (topic, payload) => {
@@ -377,14 +345,12 @@
       client.on('error', () => alert('连接失败'))
     }
 
-    // 原有发送消息函数，末尾新增存入数据库调用
+    // 核心修复：删除勾选框拦截，点击发送直接执行，无卡死
     function sendMsg() {
       if (!connected) return alert('请先加入频道')
-      if (!agreeCheck.checked) return alert('请勾选同意用户协议')
       const input = document.getElementById('msgInput')
       const text = input.value.trim()
       if (!firewallCheck(text)) return
-      // MQTT广播发送
       const payload = JSON.stringify({
         user: nickname,
         content: text
@@ -392,11 +358,9 @@
       client.publish(`chat/ch/${channel}`, payload)
       addMsg(nickname, text, true)
       input.value = ''
-      // 【新增】同步把本条消息存入Supabase云端
       saveMessageToDB(channel, nickname, text)
     }
 
-    // 原有渲染消息函数，无修改
     function addMsg(name, msg, isSelf) {
       const box = document.getElementById('chatBox')
       const p = document.createElement('p')
@@ -416,3 +380,4 @@
   </script>
 </body>
 </html>
+
